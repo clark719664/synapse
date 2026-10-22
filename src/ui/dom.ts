@@ -30,7 +30,8 @@ export function formatDuration(ms: number): string {
   const s = ms / 1000;
   if (s < 60) return `${s.toFixed(1)}s`;
   const m = Math.floor(s / 60);
-  return `${m}m ${Math.floor(s % 60).toString().padStart(2, '0')}s`;
+  if (m < 60) return `${m}m ${Math.floor(s % 60).toString().padStart(2, '0')}s`;
+  return `${Math.floor(m / 60)}h ${(m % 60).toString().padStart(2, '0')}m`;
 }
 
 export function formatCount(n: number): string {

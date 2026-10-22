@@ -25,6 +25,8 @@ export interface ForceOptions {
   spring: number;
   restLength: number;
   columnPull: number;
+  /** Width of the band around each column inside which nodes feel no column pull (0 = a hard line). */
+  columnBand: number;
   centerPull: number;
   damping: number;
 }
@@ -35,6 +37,7 @@ const DEFAULTS: ForceOptions = {
   spring: 0.02,
   restLength: 150,
   columnPull: 0.04,
+  columnBand: 0,
   centerPull: 0.004,
   damping: 0.82,
 };
@@ -54,6 +57,8 @@ export class ForceLayout {
   private readonly rand: () => number;
   /** Simulation "temperature"; decays to a floor and is bumped on structural change. */
   alpha = 1;
+  /** When set, nodes glide to these positions instead of following the forces (the tidy layout). */
+  targets: Map<string, { x: number; y: number }> | null = null;
 
   constructor(options: Partial<ForceOptions> = {}, seed = 7) {
     this.options = { ...DEFAULTS, ...options };
@@ -99,6 +104,18 @@ export class ForceLayout {
     const list = [...this.nodes.values()];
     const n = list.length;
     if (n === 0) return;
+    if (this.targets) {
+      for (const p of list) {
+        if (p.fx !== null && p.fy !== null) { p.x = p.fx; p.y = p.fy; p.vx = 0; p.vy = 0; continue; }
+        const t = this.targets.get(p.id);
+        if (!t) continue;
+        p.vx = (t.x - p.x) * 0.1;
+        p.vy = (t.y - p.y) * 0.1;
+        p.x += p.vx;
+        p.y += p.vy;
+      }
+      return;
+    }
     const a = this.alpha;
 
     // Pairwise repulsion (O(n²); fine for service graphs).
@@ -140,7 +157,9 @@ export class ForceLayout {
     for (const p of list) cy += p.y;
     cy /= n;
     for (const p of list) {
-      p.vx += (p.depth * o.columnGap - p.x) * o.columnPull * a;
+      const off = p.x - p.depth * o.columnGap;
+      const excess = Math.sign(off) * Math.max(0, Math.abs(off) - o.columnBand / 2);
+      p.vx -= excess * o.columnPull * a;
       p.vy += (cy - p.y) * o.centerPull * a;
     }
 

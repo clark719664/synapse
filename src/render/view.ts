@@ -7,6 +7,8 @@ export class View {
   height = 1;
   private targetCenter: [number, number] | null = null;
   private targetZoom: number | null = null;
+  /** Jump straight to fit targets instead of easing (for reduced motion). */
+  instant = false;
 
   resize(width: number, height: number): void {
     this.width = width;
@@ -39,17 +41,21 @@ export class View {
   }
 
   /** Smoothly frames a world rectangle with padding (in screen pixels). */
-  fit(b: { minX: number; minY: number; maxX: number; maxY: number }, padding = 80): void {
+  fit(b: { minX: number; minY: number; maxX: number; maxY: number }, padding: number | { x: number; y: number } = 80, inset: { top?: number; right?: number; bottom?: number } = {}): void {
+    const px = typeof padding === 'number' ? padding : padding.x;
+    const py = typeof padding === 'number' ? padding : padding.y;
+    const { top = 0, right = 0, bottom = 0 } = inset;
     const w = Math.max(1, b.maxX - b.minX);
     const h = Math.max(1, b.maxY - b.minY);
-    const zoom = Math.max(0.2, Math.min(2.5, Math.min((this.width - padding * 2) / w, (this.height - padding * 2) / h)));
+    const zoom = Math.max(0.2, Math.min(2.5, Math.min((this.width - right - px * 2) / w, (this.height - top - bottom - py * 2) / h)));
     this.targetZoom = zoom;
-    this.targetCenter = [(b.minX + b.maxX) / 2, (b.minY + b.maxY) / 2];
+    // Shift the centre so the framed graph sits clear of whatever covers the edges of the map.
+    this.targetCenter = [(b.minX + b.maxX) / 2 + right / 2 / zoom, (b.minY + b.maxY) / 2 + (bottom - top) / 2 / zoom];
   }
 
   /** Call every frame; eases towards any pending fit target. */
   animate(): void {
-    const k = 0.12;
+    const k = this.instant ? 1 : 0.12;
     if (this.targetCenter) {
       this.centerX += (this.targetCenter[0] - this.centerX) * k;
       this.centerY += (this.targetCenter[1] - this.centerY) * k;
