@@ -7,7 +7,10 @@ Watch every request travel through your service map, then open its span waterfal
 
 TypeScript · WebGL2 · Canvas · zero runtime dependencies · ~21 kB gzipped
 
-[![CI](https://github.com/clark719664/claudes-dream/actions/workflows/ci.yml/badge.svg)](https://github.com/clark719664/claudes-dream/actions/workflows/ci.yml)
+**[Open the live demo →](https://clark719664.github.io/synapse/)**
+
+[![CI](https://github.com/clark719664/synapse/actions/workflows/ci.yml/badge.svg)](https://github.com/clark719664/synapse/actions/workflows/ci.yml)
+[![Deploy](https://github.com/clark719664/synapse/actions/workflows/deploy.yml/badge.svg)](https://github.com/clark719664/synapse/actions/workflows/deploy.yml)
 ![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6?logo=typescript&logoColor=white)
 ![OpenTelemetry](https://img.shields.io/badge/OpenTelemetry-OTLP%20%7C%20Jaeger%20%7C%20Zipkin-f5a800?logo=opentelemetry&logoColor=white)
 ![License](https://img.shields.io/badge/license-MIT-green)
