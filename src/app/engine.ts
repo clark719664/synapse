@@ -84,6 +84,10 @@ export class Engine {
   toggleScenario(id: string): void {
     if (this.activeScenarios.has(id)) this.activeScenarios.delete(id);
     else this.activeScenarios.add(id);
+    this.applyScenarios();
+  }
+
+  private applyScenarios(): void {
     const active: Scenario[] = SCENARIOS.filter((s) => this.activeScenarios.has(s.id));
     const c = combine(active);
     this.generator.trafficMultiplier = c.trafficMultiplier;
@@ -118,7 +122,7 @@ export class Engine {
     this.clock.resume();
     this.clock.seek(Date.now());
     this.generator = new TrafficGenerator({ seed: Date.now() & 0xffff, rps: this.generator.rps, startTime: this.clock.now() });
-    this.toggleScenario(''); // re-applies active scenarios to the fresh generator
+    this.applyScenarios();
   }
 
   seek(virtualMs: number): void {
