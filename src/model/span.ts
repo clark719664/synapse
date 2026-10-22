@@ -72,3 +72,9 @@ export function childrenIndex(trace: Trace): Map<string | null, Span[]> {
   }
   return idx;
 }
+
+/** The human-readable name of a trace: its HTTP route, the page a wiki change touched, or the root span's name. */
+export function traceLabel(trace: Trace): string {
+  const a = trace.root.attributes;
+  return String(a['http.route'] ?? a['wiki.title'] ?? trace.root.name);
+}
