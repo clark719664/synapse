@@ -41,11 +41,13 @@ export class View {
   }
 
   /** Smoothly frames a world rectangle with padding (in screen pixels). */
-  fit(b: { minX: number; minY: number; maxX: number; maxY: number }, padding = 80, inset: { top?: number; right?: number; bottom?: number } = {}): void {
+  fit(b: { minX: number; minY: number; maxX: number; maxY: number }, padding: number | { x: number; y: number } = 80, inset: { top?: number; right?: number; bottom?: number } = {}): void {
+    const px = typeof padding === 'number' ? padding : padding.x;
+    const py = typeof padding === 'number' ? padding : padding.y;
     const { top = 0, right = 0, bottom = 0 } = inset;
     const w = Math.max(1, b.maxX - b.minX);
     const h = Math.max(1, b.maxY - b.minY);
-    const zoom = Math.max(0.2, Math.min(2.5, Math.min((this.width - right - padding * 2) / w, (this.height - top - bottom - padding * 2) / h)));
+    const zoom = Math.max(0.2, Math.min(2.5, Math.min((this.width - right - px * 2) / w, (this.height - top - bottom - py * 2) / h)));
     this.targetZoom = zoom;
     // Shift the centre so the framed graph sits clear of whatever covers the edges of the map.
     this.targetCenter = [(b.minX + b.maxX) / 2 + right / 2 / zoom, (b.minY + b.maxY) / 2 + (bottom - top) / 2 / zoom];

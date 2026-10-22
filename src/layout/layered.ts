@@ -7,7 +7,7 @@ export interface LayeredOptions {
   subColumnGap: number;
 }
 
-export const LAYERED_DEFAULTS: LayeredOptions = { columnGap: 270, rowGap: 104, maxRows: 8, subColumnGap: 210 };
+export const LAYERED_DEFAULTS: LayeredOptions = { columnGap: 280, rowGap: 124, maxRows: 8, subColumnGap: 220 };
 
 interface Item {
   id: string;

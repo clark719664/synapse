@@ -149,6 +149,27 @@ export class BurstDetector {
     return out.sort((a, b) => b.rate / b.baseline - a.rate / a.baseline);
   }
 
+  /**
+   * Starts from someone else's measurements (the collector's): per-key baselines,
+   * the burst log, and any burst still running, so there is no warm-up.
+   */
+  seed(baselines: Record<string, number>, log: readonly Omit<Burst, 'rate'>[], timeMs: number): void {
+    const w = this.options.windowS;
+    this.startedAt = Math.min(this.startedAt ?? timeMs, timeMs - this.options.warmupS * 1000);
+    const state = (key: string, baseline: number): KeyState => {
+      const s: KeyState = { counts: new Float64Array(w), sec: Math.floor(timeMs / 1000), baseline, observed: this.options.warmupS, lastEventAt: timeMs, burst: null };
+      this.keys.set(key, s);
+      return s;
+    };
+    for (const [key, baseline] of Object.entries(baselines)) state(key, baseline);
+    for (const b of [...log].reverse()) {
+      const burst: Burst = { ...b, rate: b.peakRate };
+      this.history.unshift(burst);
+      if (burst.endedAt === null) (this.keys.get(burst.key) ?? state(burst.key, burst.baseline)).burst = burst;
+    }
+    if (this.history.length > 20) this.history.length = 20;
+  }
+
   baseline(key: string): number {
     return this.keys.get(key)?.baseline ?? 0;
   }

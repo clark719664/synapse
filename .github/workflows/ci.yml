@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: ['**']
+    branches-ignore: [data]
   pull_request:
 
 jobs:
@@ -18,4 +18,6 @@ jobs:
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test
+      - name: Collector tests
+        run: python3 -m unittest discover -s collector -v
       - run: npm run build

@@ -5,7 +5,7 @@ import { ForceLayout, type ForceOptions } from './layout/force';
 import { layeredTargets, type LayeredOptions } from './layout/layered';
 import type { GeoEvent } from './live/geo';
 import type { FeedStatus } from './live/feed';
-import { formatRatio, PLAYOUT_MS, WikipediaSource } from './live/source';
+import { formatRatio, WikipediaSource } from './live/source';
 import { parseTraces } from './model/parsers';
 import { formatMs } from './model/stats';
 import type { Trace } from './model/span';
@@ -16,6 +16,7 @@ import { View } from './render/view';
 import { TrafficGenerator } from './sim/generator';
 import { combine, SCENARIOS } from './sim/scenarios';
 import { FeedCaption, SimControls } from './ui/controls';
+import { HistoryCard } from './ui/history';
 import { h } from './ui/dom';
 import { Sidebar } from './ui/sidebar';
 import { Topbar, type LiveSource, type StatusTone } from './ui/topbar';
@@ -35,13 +36,14 @@ function fatal(root: HTMLElement, err: unknown): void {
   )));
 }
 
-function feedStatus(s: FeedStatus, now: number): [string, StatusTone, string] {
+function feedStatus(s: FeedStatus, now: number, loadingHistory: boolean): [string, StatusTone, string] {
+  if (loadingHistory) return ['Loading history', 'warn', "Fetching the always-on collector's snapshot, then replaying the stream from where it ends."];
   const secs = (ms: number) => Math.max(1, Math.ceil(ms / 1000));
   switch (s.state) {
     case 'connecting':
       return [s.attempts > 1 ? `Reconnecting, attempt ${s.attempts}` : 'Connecting to Wikimedia', 'warn', 'Opening stream.wikimedia.org/v2/stream/recentchange'];
     case 'live':
-      return ['Live from Wikimedia', 'ok', `${s.received.toLocaleString()} events received from stream.wikimedia.org. They are shown ${PLAYOUT_MS / 1000} s behind real time so they play out in their true order.`];
+      return ['Live from Wikimedia', 'ok', `${s.received.toLocaleString()} events received from stream.wikimedia.org. Each change is drawn the moment it arrives; history from before you opened the page only feeds the counts.`];
     case 'stalled':
       return [`No events for ${secs(now - (s.lastEventAt ?? s.since))} s`, 'warn', 'The stream is open but silent. Synapse reconnects automatically after 30 s.'];
     case 'disconnected':
@@ -93,7 +95,8 @@ function main(): void {
     return panel ? panel.offsetTop + panel.offsetHeight : 0;
   };
   let globeBelow = false;
-  const fit = () => view.fit(layout.bounds(), globe.visible ? 56 : 90, {
+  // Horizontal padding leaves room for the labels centred under the outermost nodes.
+  const fit = () => view.fit(layout.bounds(), globe.visible ? { x: 96, y: 64 } : { x: 110, y: 90 }, {
     top: panelInset(),
     right: globe.visible && !globeBelow ? view.width - (globe.cx - globe.r * 1.3) : 0,
     bottom: globe.visible && globeBelow ? view.height - (globe.cy - globe.r * 1.3) : 0,
@@ -152,6 +155,9 @@ function main(): void {
   });
   sidebar.bursts = wiki.bursts;
   gl.geo = overlay.geo = wiki.located.events;
+  gl.cells = { [Symbol.iterator]: () => wiki.cells.values() };
+  const historyCard = new HistoryCard();
+  sidebar.root.insertBefore(historyCard.root, sidebar.root.children[1] ?? null);
 
   const simControls = new SimControls(engine);
   const feedCaption = new FeedCaption(() => { if (performance.now() < autoFitUntil) fit(); });
@@ -185,9 +191,17 @@ function main(): void {
   const updateGlobeCaption = (now: number) => {
     let pinned = 0;
     for (const ev of wiki.located.events) if (ev.at <= now && now - ev.at <= GEO_LINGER_MS) pinned++;
+    let placed = 0;
+    for (const c of wiki.cells.values()) placed += c[2];
+    // The collector keeps whole hours; its oldest is 24 hours before the hour holding the boundary.
+    const windowStart = (Math.floor(wiki.history.boundary / 3_600_000) - 24) * 3_600_000;
+    const firstCovered = wiki.history.coverage[0]?.[0];
+    // Never claim more than was collected: the window starts at whichever is later, 24 hours ago or the first data.
+    const since = firstCovered === undefined ? null : Math.max(windowStart, firstCovered);
+    const window = since ? `since ${new Date(since).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' })}` : 'since you opened this page';
     globeMeta.textContent = wiki.geo.lastError
       ? `Location lookups paused: ${wiki.geo.lastError}. Retrying shortly.`
-      : `${pinned} pinned in the last 2 minutes, ${wiki.located.added.toLocaleString()} of ${wiki.drawn.toLocaleString()} changes so far. Only pages with coordinates can be placed; where editors are is never published.`;
+      : `${placed.toLocaleString()} edits to geotagged pages ${window}; ${pinned} pinned in the last 10 minutes. Only pages with coordinates can be placed; where editors are is never published.`;
   };
 
   const setLegend = (v: Vocabulary) => {
@@ -209,6 +223,7 @@ function main(): void {
       topbar.setMode('sim');
     }
     simControls.root.classList.toggle('hidden', source !== 'sim');
+    simControls.sync();
     feedCaption.root.classList.toggle('hidden', source !== 'wikipedia');
     // On a phone the note would leave the network no room, so it starts folded.
     if (source === 'wikipedia') { if (mapEl.clientWidth < 820) feedCaption.collapse(); else feedCaption.expand(25_000); }
@@ -281,11 +296,16 @@ function main(): void {
   if (params.get('rps')) engine.setRps(Number(params.get('rps')));
   const wantsSim = params.get('source') === 'sim' || scenarios.length > 0 || params.has('rps');
   startLive(wantsSim ? 'sim' : 'wikipedia');
+  if (import.meta.env.DEV) Object.assign(window, { __synapse: { engine, wiki } });
 
+  // A tab hidden for a moment keeps streaming; one left in the background disconnects, and on return the
+  // stream replays from the last change counted, so history stays exact either way.
+  let hideTimer = 0;
   document.addEventListener('visibilitychange', () => {
+    clearTimeout(hideTimer);
     if (engine.mode !== 'feed') return;
-    if (document.hidden) wiki.pause();
-    else wiki.resume();
+    if (document.hidden) hideTimer = window.setTimeout(() => wiki.pause(), 30_000);
+    else if (wiki.status().state === 'paused') wiki.resume();
   });
 
   // ------------------------------------------------------------ interaction
@@ -471,13 +491,17 @@ function main(): void {
     if (t - lastUi > 250) {
       if (engine.mode === 'feed') {
         wiki.tick(Date.now());
-        const [text, tone, title] = feedStatus(wiki.status(), Date.now());
+        const [text, tone, title] = feedStatus(wiki.status(), Date.now(), wiki.historyState === 'loading');
         topbar.setStatus(text, tone, title);
         updateGlobeCaption(now);
+        historyCard.update(wiki, true, Date.now());
+      } else {
+        historyCard.update(wiki, false, 0);
       }
       if (performance.now() - lastRetarget > 12_000) {
         retarget();
       }
+      sidebar.bursts = wiki.bursts;
       sidebar.update(now);
       topbar.update(now);
       lastUi = t;

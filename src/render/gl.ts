@@ -44,7 +44,7 @@ void main() {
   if (vShape.x < 0.5) {
     float glow = exp(-r * r * 6.0);
     float core = exp(-r * r * 70.0) * p;
-    o = vec4((c * glow + mix(c, vec3(1.0), 0.7) * core * 1.8) * a, 0.0);
+    o = vec4((c * glow * 0.7 + mix(c, vec3(1.0), 0.6) * core * 1.3) * a, 0.0);
   } else if (vShape.x < 1.5) {
     float d = r / BODY;
     float inside = 1.0 - smoothstep(1.0 - 1.5 * fwidth(d), 1.0, d);
@@ -101,7 +101,7 @@ void main() {
     float ph = fract((vUv.x - uTime * vFlow) / (64.0 * uDpr));
     pulse = smoothstep(0.0, 0.06, ph) * (1.0 - smoothstep(0.06, 0.45, ph));
   }
-  float k = glow * 0.4 + core * 0.85 + pulse * (glow * 0.6 + core * 1.3);
+  float k = glow * 0.22 + core * 0.8 + pulse * (glow * 0.35 + core * 1.0);
   o = vec4(vColor.rgb * k * vColor.a, 0.0);
 }`;
 
@@ -220,7 +220,7 @@ void main() {
 
   vec4 s = texture(uScene, uv);
   vec3 light = s.rgb + texture(uBloom, uv).rgb * uBloomGain;
-  vec3 mapped = vec3(1.0) - exp(-light * 1.35);
+  vec3 mapped = vec3(1.0) - exp(-light * 1.1);
   vec3 col = bg * (1.0 - s.a) + mapped;
   col += (fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453) - 0.5) / 255.0;
   o = vec4(col, 1.0);
@@ -286,7 +286,7 @@ const GLOBE_SCALE = 1.32;
 /** A located change: arcs from its wiki to the globe, pulses, then lingers as a fading pin. */
 export const GEO_ARC_MS = 900;
 const GEO_PULSE_MS = 2600;
-export const GEO_LINGER_MS = 120_000;
+export const GEO_LINGER_MS = 600_000;
 
 /**
  * Everything emissive is drawn here: a parallax dust field, edge beams with
@@ -324,6 +324,8 @@ export class GlRenderer {
   hoverEdge: string | null = null;
   globe: GlobeView | null = null;
   geo: readonly GeoEvent[] = [];
+  /** [lat, lon, edits, flagged] per 1° cell: where geotagged pages were edited over the history window. */
+  cells: Iterable<readonly [number, number, number, number]> = [];
   private land!: WebGLTexture;
   private readonly g3: [number, number, number] = [0, 0, 0];
   private readonly h3: [number, number, number] = [0, 0, 0];
@@ -615,7 +617,7 @@ export class GlRenderer {
       const err = rps > 0 ? e.errors.rate(now, 10) / rps : 0;
       const isLit = lit.has(e.id) || this.hoverEdge === e.id || (sel !== null && (e.source === sel || e.target === sel));
       const dim = focus && !isLit ? 0.3 : 1;
-      const alpha = (isLit ? 1.1 : 0.2 + Math.min(0.55, rps * 0.05)) * dim;
+      const alpha = (isLit ? 0.95 : 0.16 + Math.min(0.32, rps * 0.025)) * dim;
       const width = (isLit ? 16 : 9 + Math.min(9, rps * 0.9)) * zoomScale * dpr;
       const ca = mix(mix(OK_PARTICLE, serviceColor(e.source), 0.55), healthColor(err), err > 0.01 ? 0.85 : 0);
       const cb = mix(mix(OK_PARTICLE, serviceColor(e.target), 0.55), healthColor(err), err > 0.01 ? 0.85 : 0);
@@ -683,7 +685,7 @@ export class GlRenderer {
           this.px[count] = this.pt[0];
           this.py[count] = this.pt[1];
           this.pw[count] = head * 2.2 * (1 - f * 0.85);
-          this.pa[count] = (1 - f) ** 1.6 * 0.9 * dim;
+          this.pa[count] = (1 - f) ** 1.6 * 0.7 * dim;
           this.setPointColor(count, c);
           count++;
         }
@@ -718,7 +720,7 @@ export class GlRenderer {
       if (alert) c = mix(c, WARNING, 0.6);
       const pulse = this.reducedMotion ? 0 : (alert ? 0.35 : err > 0.05 ? 0.2 : 0) * (0.5 + 0.5 * Math.sin(time * 4.2));
       const dim = sel !== null && sel !== node.id ? 0.4 : 1;
-      const halo = Math.min(1.1, 0.35 + rps * 0.05 + pulse);
+      const halo = Math.min(0.75, 0.22 + rps * 0.025 + pulse);
       const r = p.radius * view.zoom * dpr;
       this.pushQuad(sx * dpr, sy * dpr, r / BODY, c, dim, 1, halo);
     }
@@ -735,7 +737,7 @@ export class GlRenderer {
       if (!dest) continue;
       const [sx, sy] = view.toScreen(dest.x, dest.y);
       const dim = dimOthers && !this.isHighlighted(engine, p) ? 0.2 : 1;
-      const strength = p.status === 'error' ? 1 : p.status === 'slow' ? 0.6 : 0.22;
+      const strength = p.status === 'error' ? 0.8 : p.status === 'slow' ? 0.45 : 0.14;
       const c = p.status === 'ok' ? mix(this.particleColor(p), WHITE, 0.2) : this.particleColor(p);
       const r = dest.radius * view.zoom * dpr * (p.status === 'error' ? 2.6 : 1.9);
       this.pushQuad(sx * dpr, sy * dpr, r, c, strength * dim, 2, progress);
@@ -775,6 +777,14 @@ export class GlRenderer {
 
   private drawGeo(globe: GlobeView, layout: ForceLayout, view: View, now: number, dpr: number): void {
     const events = this.geo;
+    for (const [lat, lon, n, f] of this.cells) {
+      globe.project(lat, lon, this.g3);
+      if (this.g3[2] <= 0) continue;
+      const facing = Math.min(1, this.g3[2] * 2.2);
+      const c = mix([120, 200, 255], ERROR_PARTICLE, f / Math.max(1, n));
+      this.pushQuad(this.g3[0] * dpr, this.g3[1] * dpr, (2.2 + Math.log2(1 + n) * 0.9) * dpr, c, Math.min(0.6, 0.12 + Math.log10(1 + n) * 0.2) * facing, 3, 0);
+    }
+    this.flushQuads();
     const g = this.g3;
     const hd = this.h3;
     // Arcs and their comet trails.
@@ -912,7 +922,7 @@ export class GlRenderer {
     gl.uniform1f(this.u(p, 'uDpr'), dpr);
     gl.uniform2f(this.u(p, 'uCenter'), view.centerX, view.centerY);
     gl.uniform1f(this.u(p, 'uZoom'), view.zoom);
-    gl.uniform1f(this.u(p, 'uBloomGain'), 0.38);
+    gl.uniform1f(this.u(p, 'uBloomGain'), 0.2);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
 }

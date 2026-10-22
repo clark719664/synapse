@@ -96,6 +96,8 @@ export class Sidebar {
     }
     this.streamTitle.textContent = v.stream;
 
+    // In live mode the History card charts the same thing at full resolution, so the 60-second sparkline steps aside.
+    this.kpiEls.spark.classList.toggle('hidden', this.engine.mode === 'feed');
     this.kpiEls.rps.textContent = k.rps.toFixed(1);
     this.kpiEls.errorRate.textContent = `${(k.errorRate * 100).toFixed(1)}%`;
     this.kpiEls.errorRate.style.color = k.errorRate > 0.05 ? css(healthColor(k.errorRate)) : '';
@@ -124,11 +126,11 @@ export class Sidebar {
     this.burstCard.classList.toggle('hidden', this.engine.mode !== 'feed' || !b);
     if (!b || this.engine.mode !== 'feed') return;
     if (!b.isWarm(now)) {
-      this.burstList.replaceChildren(h('p', { class: 'empty' }, 'Learning each wiki\'s usual pace. Bursts are flagged once a wiki edits at 3× its normal rate.'));
+      this.burstList.replaceChildren(h('p', { class: 'empty' }, "Learning each wiki's usual pace."));
       return;
     }
     if (b.history.length === 0) {
-      this.burstList.replaceChildren(h('p', { class: 'empty' }, 'No bursts yet. A wiki is flagged when it edits at 3× its normal rate for a few seconds.'));
+      this.burstList.replaceChildren(h('p', { class: 'empty' }, 'None yet: a wiki is flagged at 3× its usual pace.'));
       return;
     }
     this.burstList.replaceChildren(...b.history.slice(0, 5).map((x) => {

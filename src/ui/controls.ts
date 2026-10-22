@@ -5,8 +5,9 @@ import { h } from './dom';
 /** Floating panel on the map for the simulator: traffic level and incident injection. */
 export class SimControls {
   readonly root: HTMLElement;
+  private readonly chips = new Map<string, HTMLButtonElement>();
 
-  constructor(engine: Engine) {
+  constructor(private readonly engine: Engine) {
     const rpsLabel = h('span', { class: 'num' }, `${engine.generator.rps} rps`);
     const rps = h('input', { type: 'range', min: 1, max: 80, step: 1, value: engine.generator.rps, class: 'rps', 'aria-label': 'Simulated requests per second', onInput: (e: Event) => {
       const v = Number((e.target as HTMLInputElement).value);
@@ -20,6 +21,7 @@ export class SimControls {
         chip.classList.toggle('is-active', on);
         chip.setAttribute('aria-pressed', String(on));
       } }, s.label);
+      this.chips.set(s.id, chip);
       return chip;
     });
     this.root = h('section', { class: 'map-panel sim-panel' },
@@ -27,6 +29,15 @@ export class SimControls {
       h('div', { class: 'panel-label' }, 'Break something'),
       h('div', { class: 'chips' }, ...chips),
     );
+  }
+
+  /** Reflects incidents armed elsewhere (e.g. from the URL). */
+  sync(): void {
+    for (const [id, chip] of this.chips) {
+      const on = this.engine.activeScenarios.has(id);
+      chip.classList.toggle('is-active', on);
+      chip.setAttribute('aria-pressed', String(on));
+    }
   }
 }
 

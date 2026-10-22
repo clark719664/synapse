@@ -60,6 +60,22 @@ describe('SseFeed', () => {
     expect(h.sources).toHaveLength(2);
   });
 
+  it('does not call a fresh connection stalled because the previous one went quiet', () => {
+    const h = harness();
+    h.feed.start();
+    h.sources[0]!.open();
+    h.sources[0]!.message('x');
+    h.advance(40_000);
+    h.feed.status();
+    expect(h.sources).toHaveLength(2);
+    h.sources[1]!.open();
+    h.advance(2000);
+    expect(h.feed.status().state).toBe('live');
+    h.advance(2000);
+    h.feed.status();
+    expect(h.sources).toHaveLength(2);
+  });
+
   it('backs off after errors and says when it will retry', () => {
     const h = harness();
     h.feed.start();

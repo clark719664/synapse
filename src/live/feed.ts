@@ -57,7 +57,8 @@ export class SseFeed {
   private readonly reconnectStalledMs: number;
   private readonly backoffMs: readonly number[];
 
-  constructor(readonly url: string, private readonly onMessage: (data: string, receivedAt: number) => void, options: FeedOptions = {}) {
+  /** `url` may be a function so every (re)connect can ask to resume from a different point. */
+  constructor(readonly url: string | (() => string), private readonly onMessage: (data: string, receivedAt: number, fresh: boolean) => void, options: FeedOptions = {}) {
     this.connect = options.connect ?? ((u) => new EventSource(u));
     this.now = options.now ?? (() => Date.now());
     this.setTimer = options.setTimer ?? ((fn, ms) => setTimeout(fn, ms));
@@ -73,14 +74,16 @@ export class SseFeed {
     this.closeSource();
     this.set('connecting');
     this.attempts++;
+    this.openedAt = this.now();
     let es: EventSourceLike;
     try {
-      es = this.connect(this.url);
+      es = this.connect(typeof this.url === 'function' ? this.url() : this.url);
     } catch {
       this.scheduleRetry();
       return;
     }
     this.es = es;
+    let fresh = true;
     es.onopen = () => {
       if (this.es !== es) return;
       this.openedAt = this.now();
@@ -93,7 +96,8 @@ export class SseFeed {
       this.received++;
       this.lastEventAt = t;
       if (this.state !== 'live') { this.attempts = 0; this.set('live'); }
-      this.onMessage(String(ev.data), t);
+      this.onMessage(String(ev.data), t, fresh);
+      fresh = false;
     };
     es.onerror = () => {
       if (this.es !== es) return;
@@ -120,7 +124,8 @@ export class SseFeed {
   status(): FeedStatus {
     const t = this.now();
     if ((this.state === 'live' || this.state === 'stalled') && this.es) {
-      const quietSince = this.lastEventAt ?? this.openedAt;
+      // Silence is measured on this connection only: a reconnect after a quiet spell starts fresh.
+      const quietSince = Math.max(this.lastEventAt ?? 0, this.openedAt);
       if (t - quietSince > this.stallMs && this.state === 'live') this.set('stalled', quietSince);
       if (this.state === 'stalled' && t - quietSince > this.reconnectStalledMs) this.start();
       if (this.es?.readyState === CLOSED) { this.closeSource(); this.scheduleRetry(); }

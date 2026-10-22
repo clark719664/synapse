@@ -65,6 +65,7 @@ export class Overlay {
 
     const labels: { id: string; meta: string; x: number; top: number; fs: number; alpha: number; metaColor: string; priority: number }[] = [];
     const obstacles: { id: string; box: Box }[] = [];
+    const tags: { text: string; x: number; y: number; alpha: number }[] = [];
     for (const node of engine.topology.nodes.values()) {
       const p = layout.nodes.get(node.id);
       if (!p) continue;
@@ -125,12 +126,18 @@ export class Overlay {
           priority: isHover || isSelected ? Infinity : rps,
         });
       }
-      if (alert) this.tag(alert.label, sx, sy - r - 12 * lw - 10);
+      if (alert) tags.push({ text: alert.label, x: sx, y: sy - r - 12 * lw - 10, alpha: ctx.globalAlpha });
       ctx.globalAlpha = 1;
     }
 
     // Busiest first; a label that would collide with a placed label or another node loses its rate line, then itself.
+    // Burst tags go first; labels make way for them.
     const placed: Box[] = [];
+    for (const t of tags) {
+      ctx.globalAlpha = t.alpha;
+      placed.push(this.tag(t.text, t.x, t.y));
+      ctx.globalAlpha = 1;
+    }
     const hits = (b: Box, id: string) => placed.some((o) => overlaps(o, b)) || obstacles.some((o) => o.id !== id && overlaps(o.box, b));
     for (const l of labels.sort((a, b) => b.priority - a.priority)) {
       ctx.font = `600 ${l.fs}px ${SANS}`;
@@ -195,7 +202,7 @@ export class Overlay {
     }
   }
 
-  private tag(text: string, x: number, y: number): void {
+  private tag(text: string, x: number, y: number): Box {
     const ctx = this.ctx;
     ctx.font = `600 11px ${SANS}`;
     const w = ctx.measureText(text).width + 14;
@@ -208,6 +215,7 @@ export class Overlay {
     ctx.stroke();
     ctx.fillStyle = css(WARNING);
     ctx.fillText(text, x, y + 0.5);
+    return [x - w / 2, y - 10, w, 20];
   }
 
   private tooltip(x: number, y: number, title: string, body: string, maxX: number): void {

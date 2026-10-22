@@ -63,7 +63,7 @@ interface Pending {
 }
 
 export interface GeoLookupOptions {
-  fetch?: (url: string, init?: RequestInit) => Promise<{ ok: boolean; status: number; json(): Promise<unknown> }>;
+  fetch?: (url: string, init?: RequestInit) => Promise<{ ok: boolean; status: number; json(): Promise<unknown>; headers?: { get(name: string): string | null } }>;
   now?: () => number;
   /** At most one request per this many ms, one at a time. */
   minIntervalMs?: number;
@@ -166,7 +166,10 @@ export class GeoLookup {
       const body = res.ok ? await res.json() : null;
       const err = (body as Json | null)?.error as Json | undefined;
       if (!res.ok || err) {
-        this.fail(err?.code === 'maxlag' ? 'Wikimedia asked clients to slow down (maxlag)' : `HTTP ${res.status}`);
+        // Wikimedia asked us to slow down (429 or maxlag): wait as long as it says, and keep the titles.
+        const retry = Number(res.headers?.get('Retry-After')) || 0;
+        this.fail(res.status === 429 ? 'Wikimedia asked us to slow down' : err?.code === 'maxlag' ? 'Wikimedia asked clients to slow down (maxlag)' : `HTTP ${res.status}`, retry * 1000);
+        this.requeue(host, batch);
         return;
       }
       const found = parseCoordinates(body);
@@ -181,15 +184,22 @@ export class GeoLookup {
       }
     } catch (e) {
       this.fail(e instanceof Error ? e.message : String(e));
+      this.requeue(host, batch);
     } finally {
       this.inFlight = false;
     }
   }
 
-  private fail(message: string): void {
+  private fail(message: string, waitMs = 0): void {
     this.stats.errors++;
     this.lastError = message;
-    this.nextAt = this.now() + 10_000;
+    this.nextAt = this.now() + Math.max(10_000, waitMs);
+  }
+
+  private requeue(host: string, batch: Pending[]): void {
+    let q = this.pending.get(host);
+    if (!q) this.pending.set(host, (q = new Map()));
+    for (const p of batch) if (!q.has(p.title)) q.set(p.title, p);
   }
 
   private remember(key: string, c: Coords | null): void {
